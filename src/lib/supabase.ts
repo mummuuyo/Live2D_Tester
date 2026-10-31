@@ -29,8 +29,8 @@ export async function supabaseRequest<T>(path: string, options: RequestOptions =
   if (!isSupabaseConfigured) throw new Error('Supabase 설정이 아직 연결되지 않았습니다.');
   const headers: Record<string, string> = {
     apikey: SUPABASE_PUBLISHABLE_KEY,
-    Authorization: 'Bearer ' + (options.token || SUPABASE_PUBLISHABLE_KEY)
   };
+  if (options.token) headers.Authorization = 'Bearer ' + options.token;
   if (options.body !== undefined) headers['Content-Type'] = 'application/json';
   if (options.prefer) headers.Prefer = options.prefer;
   const response = await fetch(SUPABASE_URL + '/' + path.replace(/^\//, ''), {
