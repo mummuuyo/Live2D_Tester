@@ -280,7 +280,7 @@ function AdminPage() {
     <div className="entry-card access-card"><div className="eyebrow">SUPABASE ADMIN</div><h2>관리자 로그인</h2><p className="muted">Supabase에서 미리 만든 관리자 계정을 사용하세요.</p>
       <form className="form-stack" onSubmit={logIn}>
         <label>이메일<input type="email" value={email} onChange={event => setEmail(event.target.value)} autoComplete="username" required /></label>
-        <label>비밀번호<input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" required /></label>
+        <label>비밀번호<input type="text" value={password} onChange={event => setPassword(event.target.value)} autoComplete="off" required /></label>
         {error && <p className="inline-error">{error}</p>}
         <button className="button full" type="submit" disabled={busy}>{busy ? '연결 중…' : '로그인'}</button>
       </form>
