@@ -9,6 +9,7 @@ const AUTHORIZED_MODEL_KEY = 'live2d-authorized-model-id';
 const AUTHORIZED_CODE_KEY = 'live2d-authorized-model-code';
 const MODEL_CODES_KEY = 'live2d-model-codes';
 const CLOUDFLARE_URLS_KEY = 'live2d-cloudflare-model-urls';
+const ADDED_MODELS_KEY = 'live2d-added-models';
 
 function Shell({ code, onExit, children }: { code: string; onExit: () => void; children: ReactNode }) {
   return <div className="app-shell">
@@ -32,7 +33,14 @@ function useSheetModels() {
     setError('');
     try {
       const rows = await loadSheetModels();
-      setModels(rows);
+      let added: SheetModel[] = [];
+      try {
+        const rawAdded = localStorage.getItem(ADDED_MODELS_KEY);
+        if (rawAdded) added = JSON.parse(rawAdded) as SheetModel[];
+      } catch {
+        added = [];
+      }
+      setModels([...rows, ...added.filter(item => item && typeof item.id === 'string' && typeof item.nickname === 'string' && typeof item.driveUrl === 'string')]);
       setLastUpdated(new Date().toLocaleTimeString());
     } catch (e) {
       setError(e instanceof Error ? e.message : '시트 연결에 실패했습니다.');
@@ -175,36 +183,68 @@ function AdminPage() {
   const { models, loading, error, refresh } = useSheetModels();
   const codes = useModelCodes(models);
   const [savedUrls, setSavedUrls] = useState<Record<string, string>>(readCloudflareUrls);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [modelName, setModelName] = useState('');
+  const [driveUrl, setDriveUrl] = useState('');
+  const [cloudflareUrl, setCloudflareUrl] = useState('');
   const [notice, setNotice] = useState('');
   const [formError, setFormError] = useState('');
 
-  function saveUrl(modelId: string) {
-    const value = (drafts[modelId] ?? savedUrls[modelId] ?? '').trim();
-    if (value) {
+  function addModel(event: FormEvent) {
+    event.preventDefault();
+    const cleanName = modelName.trim();
+    const cleanDriveUrl = driveUrl.trim();
+    const cleanCloudflareUrl = cloudflareUrl.trim();
+    if (!cleanName) {
+      setFormError('모델명을 입력해 주세요.');
+      return;
+    }
+
+    let drive: URL;
+    try {
+      drive = new URL(cleanDriveUrl);
+      if (drive.protocol !== 'https:' || !['drive.google.com', 'docs.google.com'].includes(drive.hostname)) throw new Error('invalid Drive URL');
+    } catch {
+      setFormError('https://drive.google.com/ 또는 docs.google.com 주소를 입력해 주세요.');
+      return;
+    }
+
+    if (cleanCloudflareUrl) {
       try {
-        const parsed = new URL(value);
-        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error('invalid protocol');
+        const cloudflare = new URL(cleanCloudflareUrl);
+        if (cloudflare.protocol !== 'https:' && cloudflare.protocol !== 'http:') throw new Error('invalid URL');
       } catch {
-        setFormError('http:// 또는 https://로 시작하는 주소를 입력해 주세요.');
-        setNotice('');
+        setFormError('Cloudflare 주소는 http:// 또는 https://로 시작해야 합니다.');
         return;
       }
     }
-    const next = { ...savedUrls };
-    if (value) next[modelId] = value;
-    else delete next[modelId];
+
+    let added: SheetModel[] = [];
     try {
-      localStorage.setItem(CLOUDFLARE_URLS_KEY, JSON.stringify(next));
+      const raw = localStorage.getItem(ADDED_MODELS_KEY);
+      if (raw) added = JSON.parse(raw) as SheetModel[];
+      const folderId = cleanDriveUrl.match(/\/folders\/([a-zA-Z0-9_-]+)/)?.[1] || null;
+      const model: SheetModel = {
+        id: 'added-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+        nickname: cleanName,
+        driveUrl: cleanDriveUrl,
+        folderId
+      };
+      localStorage.setItem(ADDED_MODELS_KEY, JSON.stringify([...added, model]));
+      if (cleanCloudflareUrl) {
+        const nextUrls = { ...savedUrls, [model.id]: cleanCloudflareUrl };
+        localStorage.setItem(CLOUDFLARE_URLS_KEY, JSON.stringify(nextUrls));
+        setSavedUrls(nextUrls);
+      }
+      setModelName('');
+      setDriveUrl('');
+      setCloudflareUrl('');
+      setFormError('');
+      setNotice('새 모델을 추가했습니다. 입장 코드 목록에 반영됐습니다.');
+      void refresh();
     } catch {
-      setFormError('브라우저 저장 공간에 저장하지 못했습니다.');
+      setFormError('브라우저에 저장하지 못했습니다. 저장 공간을 확인해 주세요.');
       setNotice('');
-      return;
     }
-    setSavedUrls(next);
-    setDrafts(current => ({ ...current, [modelId]: value }));
-    setFormError('');
-    setNotice('주소를 이 브라우저에 저장했습니다.');
   }
 
   function downloadJson() {
@@ -231,31 +271,44 @@ function AdminPage() {
 
   return <section className="admin-page">
     <div className="page-heading">
-      <div><div className="eyebrow">ADMIN CHANNEL</div><h1>모델 관리</h1><p className="muted">4자리 닉네임과 실제 모델명을 확인하고 Cloudflare 주소를 연결합니다.</p></div>
-      <div className="admin-heading-actions"><button className="button secondary" onClick={() => void refresh()} disabled={loading}><RefreshCw size={15}/> 새로고침</button><button className="button" onClick={downloadJson} disabled={loading || models.length === 0}><Download size={15}/> JSON 다운로드</button></div>
+      <div><div className="eyebrow">ADMIN CHANNEL</div><h1>모델 관리</h1><p className="muted">등록된 모델을 확인하고 새 Drive 폴더를 추가합니다.</p></div>
+      <div className="admin-heading-actions"><button className="button secondary" onClick={() => void refresh()} disabled={loading}><RefreshCw size={15}/> 목록 새로고침</button><button className="button" onClick={downloadJson} disabled={loading || models.length === 0}><Download size={15}/> JSON 다운로드</button></div>
     </div>
-    <div className="admin-notice"><strong>다른 사이트에 적용하기</strong><span>주소를 저장한 뒤 JSON을 다운로드해 공개 위치에 올리면, 다른 사이트에서 모델 목록 데이터로 불러올 수 있습니다.</span></div>
-    {formError && <p className="inline-error">{formError}</p>}
-    {notice && <p className="admin-success">{notice}</p>}
+
+    <div className="admin-notice"><strong>다른 사이트에 적용하기</strong><span>새 모델을 추가한 뒤 JSON을 다운로드해 공개 위치에 올리면, 다른 사이트에서 모델 목록과 주소를 불러올 수 있습니다.</span></div>
+
+    <form className="admin-add-form" onSubmit={addModel}>
+      <div className="admin-add-heading"><div className="eyebrow">ADD A NEW MODEL</div><h2>새 Drive 모델 추가</h2><p className="muted">새 모델명과 Google Drive 폴더 주소를 등록하세요. Cloudflare 주소는 선택 입력입니다.</p></div>
+      <div className="admin-add-grid">
+        <label>모델명 (입장 비밀번호)
+          <input value={modelName} onChange={event => { setModelName(event.target.value); setFormError(''); }} placeholder="예: 차서나 모델" required />
+        </label>
+        <label>새 Google Drive 폴더 주소
+          <input type="url" value={driveUrl} onChange={event => { setDriveUrl(event.target.value); setFormError(''); }} placeholder="https://drive.google.com/drive/folders/…" required />
+        </label>
+        <label>Cloudflare 모델 주소 (선택)
+          <input type="url" value={cloudflareUrl} onChange={event => { setCloudflareUrl(event.target.value); setFormError(''); }} placeholder="https://… (나중에 추가 가능)" />
+        </label>
+      </div>
+      {formError && <p className="inline-error">{formError}</p>}
+      {notice && <p className="admin-success">{notice}</p>}
+      <button className="button" type="submit"><Save size={15}/> 새 모델 추가</button>
+    </form>
+
     {loading ? <div className="empty-state"><RefreshCw className="spin" size={27}/><p>모델 목록을 불러오는 중…</p></div>
       : error ? <div className="error-state"><h3>시트 데이터를 불러오지 못했습니다.</h3><p>{error}</p><button className="button" onClick={() => void refresh()}>다시 시도</button></div>
-      : models.length === 0 ? <div className="empty-state"><p>관리할 모델이 없습니다.</p></div>
-      : <div className="admin-model-list">{models.map(model => <article className="admin-model-row" key={model.id}>
-        <div className="admin-model-identity"><span className="admin-code">{codes[model.id] || '----'}</span><div><strong>{model.nickname}</strong><span className="muted">실제 모델명 · 비밀번호</span></div></div>
-        <div className="admin-drive-link"><span>현재 Drive 주소</span><a href={model.driveUrl} target="_blank" rel="noreferrer">{model.driveUrl}<ExternalLink size={13}/></a></div>
-        <form className="admin-url-form" onSubmit={event => { event.preventDefault(); saveUrl(model.id); }}>
-          <label>Cloudflare 모델 주소
-            <input type="url" value={drafts[model.id] ?? savedUrls[model.id] ?? ''} onChange={event => { setDrafts(current => ({ ...current, [model.id]: event.target.value })); setNotice(''); setFormError(''); }} placeholder="https://… (Cloudflare 주소)" />
-          </label>
-          <button className="button secondary small" type="submit"><Save size={14}/> 주소 저장</button>
-          {savedUrls[model.id] && <span className="saved-badge">저장됨</span>}
-        </form>
-      </article>)}</div>}
+      : <><div className="admin-list-heading"><h2>등록된 모델 <span>{models.length}</span></h2><p className="muted">4자리 입장 코드와 원래 이름을 확인할 수 있습니다.</p></div>
+        {models.length === 0 ? <div className="empty-state"><p>등록된 모델이 없습니다.</p></div>
+        : <div className="admin-model-list">{models.map(model => <article className="admin-model-row" key={model.id}>
+          <div className="admin-model-identity"><span className="admin-code">{codes[model.id] || '----'}</span><div><strong>{model.nickname}</strong><span className="muted">{model.id.startsWith('added-') ? '관리자 추가 모델' : '기존 시트 모델'}</span></div></div>
+          <div className="admin-drive-link"><span>Google Drive 주소</span><a href={model.driveUrl} target="_blank" rel="noreferrer">{model.driveUrl}<ExternalLink size={13}/></a></div>
+          <div className="admin-drive-link"><span>Cloudflare 주소</span>{savedUrls[model.id] ? <a href={savedUrls[model.id]} target="_blank" rel="noreferrer">{savedUrls[model.id]}<ExternalLink size={13}/></a> : <span className="muted">미등록</span>}</div>
+        </article>)}</div>}</>}
     {!loading && !error && models.length > 0 && <details className="admin-export">
       <summary>다른 사이트용 JSON 미리보기</summary>
       <textarea readOnly value={exportJson} aria-label="JSON export preview"/>
     </details>}
-    <p className="admin-footnote">저장한 주소는 현재 브라우저에 보관됩니다. 이 화면에서 수정한 값을 여러 기기와 방문자에게 공유하려면 JSON을 공개 위치에 올려 해당 사이트에서 불러와야 합니다.</p>
+    <p className="admin-footnote">새 모델은 현재 브라우저에 저장됩니다. 여러 기기와 방문자에게 공유하려면 JSON을 다운로드해 공개 위치에 올려야 합니다.</p>
   </section>;
 }
 
