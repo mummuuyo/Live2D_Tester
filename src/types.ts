@@ -1,0 +1,1 @@
+export type SheetModel={id:string;nickname:string;driveUrl:string;folderId:string|null};
