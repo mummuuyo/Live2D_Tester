@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { Link, Navigate, Route, Routes } from 'react-router-dom';
-import { Box, ExternalLink, LogOut, RefreshCw, Save } from 'lucide-react';
+import { ArrowLeft, Box, ExternalLink, LogOut, MousePointer2, RefreshCw, Save, UserRound } from 'lucide-react';
 import { isSupabaseConfigured, signInWithPassword, signOut, supabaseRequest } from './lib/supabase';
 import type { Live2DModel, SupabaseSession } from './lib/supabase';
 
@@ -42,6 +42,95 @@ function SetupNotice() {
       <li>Supabase Auth에서 관리자 계정을 만든 뒤, README의 안내대로 관리자 권한을 연결합니다.</li>
     </ol>
   </div>;
+}
+
+type PublicModelOption = { code: string };
+
+function AccessPage() {
+  const [models, setModels] = useState<PublicModelOption[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedCode, setSelectedCode] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function refreshModels() {
+    if (!isSupabaseConfigured) {
+      setError('Supabase 연결이 설정되지 않았습니다.');
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      const rows = await supabaseRequest<PublicModelOption[]>(
+        'rest/v1/live2d_models?select=code&order=created_at.desc'
+      );
+      setModels(rows);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '모델 목록을 불러오지 못했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { void refreshModels(); }, []);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!selectedCode || !password) {
+      setError('모델을 선택하고 비밀번호를 입력해 주세요.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const rows = await supabaseRequest<{ cloudflare_url: string }[]>(
+        'rest/v1/rpc/get_live2d_model_for_access',
+        { method: 'POST', body: { p_code: selectedCode, p_password: normalizeModelName(password) } }
+      );
+      const modelUrl = rows[0]?.cloudflare_url;
+      if (!modelUrl || new URL(modelUrl).protocol !== 'https:') {
+        throw new Error('모델 코드 또는 비밀번호가 올바르지 않습니다.');
+      }
+      sessionStorage.setItem('live2d-selected-model-url', modelUrl);
+      setPassword('');
+      window.location.assign(import.meta.env.BASE_URL + 'tracking/');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '입장에 실패했습니다. 다시 시도해 주세요.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!isSupabaseConfigured) return <section className="entry-layout access-layout"><SetupNotice/></section>;
+
+  return <section className="entry-layout access-layout">
+    <div className="hero-copy-block">
+      <div className="eyebrow"><span className="live-dot"/> LIVE2D MODEL LAB</div>
+      <h1>모델을 선택하고,<br/><span className="gradient-text">바로 만나 보세요.</span></h1>
+      <p className="hero-copy">모델 코드를 선택하고 비밀번호를 입력하면 트래킹 화면으로 이동합니다.</p>
+      <div className="mini-points"><span><Box size={15}/> 모델 코드 선택</span><span><UserRound size={15}/> 비밀번호 입력</span><span><MousePointer2 size={15}/> Live2D 트래킹</span></div>
+    </div>
+    <div className="entry-card access-card">
+      <div className="entry-icon"><Box size={23}/></div>
+      <div className="eyebrow">MODEL ACCESS</div>
+      <h2>모델 입장</h2>
+      <p className="muted">입장 후에는 닉네임이나 주소를 표시하지 않습니다.</p>
+      {loading ? <div className="empty-state compact-state"><RefreshCw className="spin" size={24}/><p>모델 목록을 불러오는 중…</p></div>
+        : error && models.length === 0 ? <div className="error-state compact-state"><p>{error}</p><button className="button" onClick={() => void refreshModels()}>다시 시도</button></div>
+        : models.length === 0 ? <div className="empty-state compact-state"><p>등록된 모델이 없습니다.</p><Link className="button" to="/admin">관리자 열기</Link></div>
+        : <form className="form-stack access-form" onSubmit={submit}>
+          <label>모델 선택<select value={selectedCode} onChange={event => { setSelectedCode(event.target.value); setPassword(''); setError(''); }} required>
+            <option value="" disabled>모델 코드를 선택해 주세요</option>
+            {models.map(model => <option key={model.code} value={model.code}>{model.code}</option>)}
+          </select></label>
+          <label>비밀번호<input type="text" autoComplete="off" value={password} onChange={event => { setPassword(event.target.value); setError(''); }} placeholder="모델 비밀번호 입력" required /></label>
+          {error && <p className="inline-error">{error}</p>}
+          <button className="button full" type="submit" disabled={busy || !selectedCode}>{busy ? '확인 중…' : <>트래킹 시작 <ArrowLeft className="flip" size={16}/></>}</button>
+        </form>}
+    </div>
+  </section>;
 }
 
 function AdminPage() {
@@ -222,10 +311,10 @@ function AdminPage() {
 }
 
 export default function App() {
-  return <Routes>
-    <Route path="/" element={<Navigate to="/tracking/" replace/>}/>
-    <Route path="/tracking" element={<Navigate to="/tracking/" replace/>}/>
-    <Route path="/admin" element={<Shell><AdminPage/></Shell>}/>
+  return <Shell><Routes>
+    <Route path="/" element={<AccessPage/>}/>
+    <Route path="/admin" element={<AdminPage/>}/>
     <Route path="*" element={<Navigate to="/" replace/>}/>
-  </Routes>;
+  </Routes></Shell>;
 }
+

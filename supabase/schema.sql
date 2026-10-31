@@ -19,7 +19,7 @@ alter table public.live2d_models enable row level security;
 alter table public.live2d_admins enable row level security;
 
 revoke all on table public.live2d_models from anon, authenticated;
-grant select (cloudflare_url, created_at) on table public.live2d_models to anon;
+grant select (code, created_at) on table public.live2d_models to anon;
 grant select, insert, update, delete on table public.live2d_models to authenticated;
 
 revoke all on table public.live2d_admins from anon, authenticated;
@@ -70,3 +70,26 @@ drop policy if exists "Admins can check their own access" on public.live2d_admin
 create policy "Admins can check their own access"
   on public.live2d_admins for select to authenticated
   using (user_id = (select auth.uid()));
+
+-- The public can see only the random model codes. This function returns a
+-- model URL only after both the selected code and its password match.
+create or replace function public.get_live2d_model_for_access(
+  p_code text,
+  p_password text
+)
+returns table (cloudflare_url text)
+language sql
+security definer
+set search_path = ''
+as $$
+  select m.cloudflare_url
+  from public.live2d_models as m
+  where m.enabled = true
+    and m.code = p_code
+    and m.name = p_password
+  limit 1;
+$$;
+
+revoke all on function public.get_live2d_model_for_access(text, text) from public, anon, authenticated;
+grant execute on function public.get_live2d_model_for_access(text, text) to anon;
+
