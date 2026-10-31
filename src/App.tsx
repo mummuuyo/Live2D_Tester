@@ -127,7 +127,7 @@ function AccessPage({ onEnter }: { onEnter: (model: Live2DModel) => void }) {
         </div>}
       {!loading && !error && models.length > 0 && <form className="form-stack access-form" onSubmit={submit}>
         <div className="selected-model-label">{selectedModel ? <>선택한 코드 <strong>{selectedModel.code}</strong></> : '모델 코드를 선택해 주세요.'}</div>
-        <label>원래 모델명 (비밀번호)<input type="password" autoComplete="off" value={password} onChange={event => { setPassword(event.target.value); setFormError(''); }} placeholder="모델의 원래 이름 입력" required /></label>
+        <label>원래 모델명 (비밀번호)<input type="text" autoComplete="off" value={password} onChange={event => { setPassword(event.target.value); setFormError(''); }} placeholder="모델의 원래 이름 입력" required /></label>
         {formError && <p className="inline-error">{formError}</p>}
         <button className="button full" type="submit" disabled={!selectedModel}>입장하기 <ArrowLeft className="flip" size={16}/></button>
       </form>}
