@@ -8,6 +8,10 @@ import type { Live2DModel, SupabaseSession } from './lib/supabase';
 const AUTHORIZED_MODEL_KEY = 'live2d-authorized-model';
 const ADMIN_SESSION_KEY = 'live2d-supabase-admin-session';
 
+function normalizeModelName(value: string): string {
+  return value.normalize('NFC').trim();
+}
+
 function readAuthorizedModel(): Live2DModel | null {
   try {
     const raw = sessionStorage.getItem(AUTHORIZED_MODEL_KEY);
@@ -88,7 +92,7 @@ function AccessPage({ onEnter }: { onEnter: (model: Live2DModel) => void }) {
       setFormError('먼저 모델 코드를 선택해 주세요.');
       return;
     }
-    if (password.trim() !== selectedModel.name) {
+    if (normalizeModelName(password) !== normalizeModelName(selectedModel.name)) {
       setFormError('비밀번호가 맞지 않습니다. 원래 모델명을 확인해 주세요.');
       return;
     }
@@ -123,7 +127,7 @@ function AccessPage({ onEnter }: { onEnter: (model: Live2DModel) => void }) {
         </div>}
       {!loading && !error && models.length > 0 && <form className="form-stack access-form" onSubmit={submit}>
         <div className="selected-model-label">{selectedModel ? <>선택한 코드 <strong>{selectedModel.code}</strong></> : '모델 코드를 선택해 주세요.'}</div>
-        <label>원래 모델명 (비밀번호)<input type="password" autoComplete="off" value={password} onChange={event => { setPassword(event.target.value); setFormError(''); }} placeholder="모델의 원래 이름 입력" required /></label>
+        <label>원래 모델명 (비밀번호)<input type="text" autoComplete="off" value={password} onChange={event => { setPassword(event.target.value); setFormError(''); }} placeholder="모델의 원래 이름 입력" required /></label>
         {formError && <p className="inline-error">{formError}</p>}
         <button className="button full" type="submit" disabled={!selectedModel}>입장하기 <ArrowLeft className="flip" size={16}/></button>
       </form>}
@@ -206,7 +210,7 @@ function AdminPage() {
   async function addModel(event: FormEvent) {
     event.preventDefault();
     if (!session) return;
-    const cleanName = modelName.trim();
+    const cleanName = normalizeModelName(modelName);
     const cleanUrl = cloudflareUrl.trim();
     if (!cleanName) { setError('모델명을 입력해 주세요.'); return; }
     try {
@@ -276,7 +280,7 @@ function AdminPage() {
     <div className="entry-card access-card"><div className="eyebrow">SUPABASE ADMIN</div><h2>관리자 로그인</h2><p className="muted">Supabase에서 미리 만든 관리자 계정을 사용하세요.</p>
       <form className="form-stack" onSubmit={logIn}>
         <label>이메일<input type="email" value={email} onChange={event => setEmail(event.target.value)} autoComplete="username" required /></label>
-        <label>비밀번호<input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" required /></label>
+        <label>비밀번호<input type="text" value={password} onChange={event => setPassword(event.target.value)} autoComplete="off" required /></label>
         {error && <p className="inline-error">{error}</p>}
         <button className="button full" type="submit" disabled={busy}>{busy ? '연결 중…' : '로그인'}</button>
       </form>
