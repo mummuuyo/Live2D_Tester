@@ -56,3 +56,18 @@
 .admin-model-row{grid-template-columns:minmax(200px,.8fr) minmax(230px,1.1fr) minmax(220px,1fr)}
 @media(max-width:900px){.admin-add-grid{grid-template-columns:1fr 1fr}.admin-add-grid label:last-child{grid-column:1/-1}}
 @media(max-width:600px){.admin-add-grid{grid-template-columns:1fr}.admin-add-grid label:last-child{grid-column:auto}.admin-add-form{padding:16px}}
+
+.supabase-setup{width:min(600px,100%);justify-self:end;background:linear-gradient(150deg,#151b2a,#101521);border:1px solid #ffffff18;border-radius:18px;padding:28px;color:#e9edf6}
+.supabase-setup h2{font-size:22px;margin:12px 0 8px}
+.supabase-setup p,.supabase-setup li{font-size:12px;line-height:1.8;color:#aab4c9}
+.supabase-setup ol{padding-left:20px}
+.supabase-setup li{margin:7px 0}
+.supabase-setup a{display:inline-flex;align-items:center;gap:5px;color:#c4b5fd}
+.supabase-setup code{color:#c4b5fd;font-size:11px;overflow-wrap:anywhere}
+.supabase-add-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.supabase-model-row{grid-template-columns:minmax(190px,.8fr) minmax(260px,1.2fr) auto}
+.supabase-url-field input{width:100%;min-width:0;background:#0b0f19;border:1px solid #2a3245;border-radius:9px;padding:10px;color:#edf1fb;outline:none}
+.supabase-url-field input:focus{border-color:#818cf8}
+.supabase-row-actions{display:flex;gap:8px;align-items:center}
+@media(max-width:900px){.supabase-model-row{grid-template-columns:1fr 1fr}.supabase-row-actions{grid-column:1/-1}}
+@media(max-width:600px){.supabase-setup{padding:21px}.supabase-add-grid{grid-template-columns:1fr}.supabase-model-row{grid-template-columns:1fr}.supabase-row-actions{grid-column:auto}}
