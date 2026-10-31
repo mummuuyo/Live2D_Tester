@@ -21,7 +21,7 @@ async function startTracking(): Promise<void> {
 
   try {
     const models = await supabaseRequest<PublicModelSource[]>(
-      'rest/v1/live2d_models?select=cloudflare_url&enabled=eq.true&order=created_at.desc'
+      'rest/v1/live2d_models?select=cloudflare_url&order=created_at.desc'
     );
     const urls = models.map(model => model.cloudflare_url).filter(url => {
       try { return new URL(url).protocol === 'https:'; } catch { return false; }
