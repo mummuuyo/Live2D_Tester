@@ -1,1 +1,10 @@
-<!doctype html><html lang="ko"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><meta name="theme-color" content="#0b0e16"/><title>Live2D Studio</title></head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>
+<!doctype html><html lang="ko"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><meta name="theme-color" content="#0b0e16"/><title>Live2D Studio</title><script>
+(function (location) {
+  if (!location.search.startsWith('?/')) return;
+  var segments = location.search.slice(2).split('&');
+  var route = '/' + (segments.shift() || '');
+  var query = segments.length ? '?' + segments.join('&').replace(/~and~/g, '&') : '';
+  var path = location.pathname.replace(/\/$/, '') + route.replace(/~and~/g, '&');
+  window.history.replaceState(null, '', path + query + location.hash);
+})(window.location);
+</script></head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>
