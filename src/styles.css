@@ -42,3 +42,17 @@
 .admin-footnote{color:#8792a7;font-size:11px;line-height:1.7;margin:0}
 @media(max-width:900px){.admin-model-row{grid-template-columns:1fr 1fr}.admin-url-form{grid-column:1/-1}}
 @media(max-width:600px){.admin-model-row{grid-template-columns:1fr;gap:13px;padding:14px}.admin-url-form{grid-template-columns:1fr}.admin-heading-actions{width:100%}.admin-heading-actions .button{flex:1}}
+
+.admin-add-form{display:flex;flex-direction:column;gap:14px;border:1px solid #4a466e;border-radius:16px;background:linear-gradient(145deg,#171b2a,#101521);padding:20px}
+.admin-add-heading h2{font-size:19px;margin:8px 0 4px}
+.admin-add-heading p{margin:0}
+.admin-add-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.admin-add-grid label{display:flex;flex-direction:column;gap:7px;color:#c9d0df;font-size:11px}
+.admin-add-grid input{min-width:0;background:#0b0f19;border:1px solid #2a3245;border-radius:9px;padding:11px;color:#edf1fb;outline:none}
+.admin-add-grid input:focus{border-color:#818cf8}
+.admin-list-heading h2{font-size:17px;margin:0 0 5px}
+.admin-list-heading h2 span{margin-left:6px;color:#c4b5fd}
+.admin-list-heading p{margin:0}
+.admin-model-row{grid-template-columns:minmax(200px,.8fr) minmax(230px,1.1fr) minmax(220px,1fr)}
+@media(max-width:900px){.admin-add-grid{grid-template-columns:1fr 1fr}.admin-add-grid label:last-child{grid-column:1/-1}}
+@media(max-width:600px){.admin-add-grid{grid-template-columns:1fr}.admin-add-grid label:last-child{grid-column:auto}.admin-add-form{padding:16px}}
