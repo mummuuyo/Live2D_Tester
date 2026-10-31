@@ -1,110 +1,86 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { Link, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Box, Download, ExternalLink, LogOut, MousePointer2, RefreshCw, Save, UserRound } from 'lucide-react';
-import { loadSheetModels } from './lib/sheet';
-import type { SheetModel } from './types';
+import { ArrowLeft, Box, ExternalLink, LogOut, MousePointer2, RefreshCw, Save, UserRound } from 'lucide-react';
+import { isSupabaseConfigured, signInWithPassword, signOut, supabaseRequest } from './lib/supabase';
+import type { Live2DModel, SupabaseSession } from './lib/supabase';
 
-const AUTHORIZED_MODEL_KEY = 'live2d-authorized-model-id';
-const AUTHORIZED_CODE_KEY = 'live2d-authorized-model-code';
-const MODEL_CODES_KEY = 'live2d-model-codes';
-const CLOUDFLARE_URLS_KEY = 'live2d-cloudflare-model-urls';
-const ADDED_MODELS_KEY = 'live2d-added-models';
+const AUTHORIZED_MODEL_KEY = 'live2d-authorized-model';
+const ADMIN_SESSION_KEY = 'live2d-supabase-admin-session';
 
-function Shell({ code, onExit, children }: { code: string; onExit: () => void; children: ReactNode }) {
+function readAuthorizedModel(): Live2DModel | null {
+  try {
+    const raw = sessionStorage.getItem(AUTHORIZED_MODEL_KEY);
+    return raw ? JSON.parse(raw) as Live2DModel : null;
+  } catch {
+    return null;
+  }
+}
+
+function readAdminSession(): SupabaseSession | null {
+  try {
+    const raw = sessionStorage.getItem(ADMIN_SESSION_KEY);
+    return raw ? JSON.parse(raw) as SupabaseSession : null;
+  } catch {
+    return null;
+  }
+}
+
+function Shell({ model, onExit, children }: { model: Live2DModel | null; onExit: () => void; children: ReactNode }) {
   return <div className="app-shell">
     <header className="topbar">
-      <Link to="/" className="brand"><span className="brand-mark"><Box size={19}/></span> Live2D Studio <span className="dev-tag">MODEL ACCESS</span></Link>
-      <nav><Link to="/admin" className="button ghost small">관리자</Link>{code && <><span className="nickname"><UserRound size={15}/> 모델 코드 {code}</span><button className="button ghost small" onClick={onExit}><LogOut size={15}/> 나가기</button></>}</nav>
+      <Link to="/" className="brand"><span className="brand-mark"><Box size={19}/></span> Live2D Studio <span className="dev-tag">CLOUDFLARE</span></Link>
+      <nav><Link to="/admin" className="button ghost small">관리자</Link>{model && <><span className="nickname"><UserRound size={15}/> 모델 코드 {model.code}</span><button className="button ghost small" onClick={onExit}><LogOut size={15}/> 나가기</button></>}</nav>
     </header>
     <main className="main">{children}</main>
-    <footer>Live2D Studio · 모델 코드와 원래 모델명으로 입장</footer>
+    <footer>Live2D Studio · Cloudflare 모델 주소 · Supabase 모델 목록</footer>
   </div>;
 }
 
-function useSheetModels() {
-  const [models, setModels] = useState<SheetModel[]>([]);
+function SetupNotice() {
+  return <div className="supabase-setup">
+    <div className="eyebrow">SUPABASE CONNECTION REQUIRED</div>
+    <h2>Supabase 연결이 필요합니다</h2>
+    <p>프로젝트 주소와 공개용 키를 GitHub Actions 변수에 등록하고, Supabase에서 데이터베이스 설정을 실행해 주세요.</p>
+    <ol>
+      <li>저장소 Settings → Secrets and variables → Actions → Variables에서 <code>VITE_SUPABASE_URL</code>과 <code>VITE_SUPABASE_PUBLISHABLE_KEY</code>를 추가합니다.</li>
+      <li><a href="https://github.com/mummuuyo/Live2D_Tester/blob/main/supabase/schema.sql" target="_blank" rel="noreferrer">Supabase 설정 SQL 열기 <ExternalLink size={13}/></a>를 SQL Editor에서 실행합니다.</li>
+      <li>Supabase Auth에서 관리자 계정을 만든 뒤, README의 안내대로 관리자 권한을 연결합니다.</li>
+    </ol>
+  </div>;
+}
+
+function AccessPage({ onEnter }: { onEnter: (model: Live2DModel) => void }) {
+  const [models, setModels] = useState<Live2DModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [lastUpdated, setLastUpdated] = useState('');
+  const [selectedCode, setSelectedCode] = useState('');
+  const [password, setPassword] = useState('');
+  const [formError, setFormError] = useState('');
+  const navigate = useNavigate();
+  const selectedModel = models.find(model => model.code === selectedCode);
 
   async function refresh() {
+    if (!isSupabaseConfigured) {
+      setError('Supabase 프로젝트 주소와 공개용 키를 먼저 설정해 주세요.');
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError('');
     try {
-      const rows = await loadSheetModels();
-      let added: SheetModel[] = [];
-      try {
-        const rawAdded = localStorage.getItem(ADDED_MODELS_KEY);
-        if (rawAdded) added = JSON.parse(rawAdded) as SheetModel[];
-      } catch {
-        added = [];
-      }
-      setModels([...rows, ...added.filter(item => item && typeof item.id === 'string' && typeof item.nickname === 'string' && typeof item.driveUrl === 'string')]);
-      setLastUpdated(new Date().toLocaleTimeString());
+      const rows = await supabaseRequest<Live2DModel[]>(
+        'rest/v1/live2d_models?select=id,code,name,cloudflare_url,enabled&enabled=eq.true&order=created_at.desc'
+      );
+      setModels(rows);
     } catch (e) {
-      setError(e instanceof Error ? e.message : '시트 연결에 실패했습니다.');
+      setError(e instanceof Error ? e.message : 'Supabase 모델 목록을 불러오지 못했습니다.');
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => { void refresh(); }, []);
-  return { models, loading, error, lastUpdated, refresh };
-}
-
-function useModelCodes(models: SheetModel[]) {
-  const [codes, setCodes] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    if (!models.length) return;
-    let saved: Record<string, string> = {};
-    try {
-      const raw = sessionStorage.getItem(MODEL_CODES_KEY);
-      if (raw) saved = JSON.parse(raw) as Record<string, string>;
-    } catch {
-      saved = {};
-    }
-
-    const next: Record<string, string> = {};
-    const used = new Set<string>();
-    for (const model of models) {
-      const savedCode = saved[model.id];
-      if (typeof savedCode === 'string' && /^\d{4}$/.test(savedCode) && !used.has(savedCode)) {
-        next[model.id] = savedCode;
-        used.add(savedCode);
-      }
-    }
-
-    for (const model of models) {
-      if (next[model.id]) continue;
-      let code = '';
-      do {
-        code = String(Math.floor(1000 + Math.random() * 9000));
-      } while (used.has(code));
-      next[model.id] = code;
-      used.add(code);
-    }
-
-    try {
-      sessionStorage.setItem(MODEL_CODES_KEY, JSON.stringify(next));
-    } catch {
-      // Codes remain usable for this page even when browser storage is unavailable.
-    }
-    setCodes(next);
-  }, [models]);
-
-  return codes;
-}
-
-function AccessPage({ onEnter }: { onEnter: (modelId: string, code: string) => void }) {
-  const { models, loading, error, refresh } = useSheetModels();
-  const codes = useModelCodes(models);
-  const [selectedId, setSelectedId] = useState('');
-  const [password, setPassword] = useState('');
-  const [formError, setFormError] = useState('');
-  const navigate = useNavigate();
-  const selectedModel = models.find(model => model.id === selectedId);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -112,284 +88,265 @@ function AccessPage({ onEnter }: { onEnter: (modelId: string, code: string) => v
       setFormError('먼저 모델 코드를 선택해 주세요.');
       return;
     }
-    if (password.trim() !== selectedModel.nickname) {
+    if (password.trim() !== selectedModel.name) {
       setFormError('비밀번호가 맞지 않습니다. 원래 모델명을 확인해 주세요.');
       return;
     }
-    const code = codes[selectedModel.id];
-    onEnter(selectedModel.id, code);
+    onEnter(selectedModel);
     navigate('/models/' + encodeURIComponent(selectedModel.id));
+  }
+
+  if (!isSupabaseConfigured) {
+    return <section className="entry-layout access-layout"><div className="hero-copy-block"><div className="eyebrow"><span className="live-dot"/> LIVE2D MODEL LAB</div><h1>모델을 만나고,<br/><span className="gradient-text">직접 움직여 보세요.</span></h1><p className="hero-copy">모델 목록은 Supabase에서, 모델 파일은 Cloudflare에서 불러옵니다.</p></div><SetupNotice/></section>;
   }
 
   return <section className="entry-layout access-layout">
     <div className="hero-copy-block">
       <div className="eyebrow"><span className="live-dot"/> LIVE2D MODEL LAB</div>
       <h1>모델 코드를 고르고,<br/><span className="gradient-text">이름으로 입장하세요.</span></h1>
-      <p className="hero-copy">목록에 표시된 4자리 코드를 선택한 뒤, 해당 모델의 원래 이름을 비밀번호로 입력해 주세요.</p>
-      <div className="mini-points"><span><Box size={15}/> 4자리 모델 코드</span><span><UserRound size={15}/> 모델명 비밀번호</span><span><MousePointer2 size={15}/> 모델별 입장</span></div>
+      <p className="hero-copy">4자리 모델 코드를 선택하고 원래 모델명을 입력하면 Cloudflare 모델 주소로 연결됩니다.</p>
+      <div className="mini-points"><span><Box size={15}/> 4자리 모델 코드</span><span><UserRound size={15}/> 모델명 비밀번호</span><span><MousePointer2 size={15}/> Cloudflare 연결</span></div>
     </div>
 
     <div className="entry-card access-card">
       <div className="entry-icon"><Box size={23}/></div>
       <div className="eyebrow">MODEL ACCESS</div>
       <h2>모델 선택하기</h2>
-      <p className="muted">모델 이름은 숨기고 4자리 코드로 표시합니다.</p>
-
-      {loading ? <div className="empty-state compact-state"><RefreshCw className="spin" size={24}/><p>모델 목록을 불러오는 중…</p></div>
+      <p className="muted">모델 목록을 Supabase에서 불러옵니다.</p>
+      {loading ? <div className="empty-state compact-state"><RefreshCw className="spin" size={24}/><p>Supabase 연결 중…</p></div>
         : error ? <div className="error-state compact-state"><p>{error}</p><button className="button" onClick={() => void refresh()}>다시 시도</button></div>
-        : models.length === 0 ? <div className="empty-state compact-state"><p>현재 등록된 모델이 없습니다.</p></div>
+        : models.length === 0 ? <div className="empty-state compact-state"><p>등록된 모델이 없습니다. 관리자 화면에서 모델을 추가해 주세요.</p><Link className="button" to="/admin">관리자 열기</Link></div>
         : <div className="model-code-list" aria-label="모델 코드 목록">
-          {models.map((model, index) => <button
-            key={model.id}
-            type="button"
-            className={'model-code-option' + (selectedId === model.id ? ' selected' : '')}
-            onClick={() => { setSelectedId(model.id); setPassword(''); setFormError(''); }}
-            aria-pressed={selectedId === model.id}
-          >
-            <span className="model-code-number">{codes[model.id] || '----'}</span>
-            <span className="model-code-caption">MODEL {String(index + 1).padStart(2, '0')}</span>
+          {models.map((model, index) => <button key={model.id} type="button" className={'model-code-option' + (selectedCode === model.code ? ' selected' : '')} onClick={() => { setSelectedCode(model.code); setPassword(''); setFormError(''); }} aria-pressed={selectedCode === model.code}>
+            <span className="model-code-number">{model.code}</span><span className="model-code-caption">MODEL {String(index + 1).padStart(2, '0')}</span>
           </button>)}
         </div>}
-
       {!loading && !error && models.length > 0 && <form className="form-stack access-form" onSubmit={submit}>
-        <div className="selected-model-label">{selectedModel ? <>선택한 코드 <strong>{codes[selectedModel.id] || '----'}</strong></> : '모델 코드를 선택해 주세요.'}</div>
-        <label>원래 모델명 (비밀번호)
-          <input
-            type="password"
-            autoComplete="off"
-            value={password}
-            onChange={event => { setPassword(event.target.value); setFormError(''); }}
-            placeholder="모델의 원래 이름 입력"
-            required
-          />
-        </label>
+        <div className="selected-model-label">{selectedModel ? <>선택한 코드 <strong>{selectedModel.code}</strong></> : '모델 코드를 선택해 주세요.'}</div>
+        <label>원래 모델명 (비밀번호)<input type="password" autoComplete="off" value={password} onChange={event => { setPassword(event.target.value); setFormError(''); }} placeholder="모델의 원래 이름 입력" required /></label>
         {formError && <p className="inline-error">{formError}</p>}
         <button className="button full" type="submit" disabled={!selectedModel}>입장하기 <ArrowLeft className="flip" size={16}/></button>
       </form>}
-      <p className="small-note">모델 코드는 이 브라우저 세션 동안 유지됩니다.</p>
     </div>
   </section>;
-}
-
-function readCloudflareUrls(): Record<string, string> {
-  try {
-    return JSON.parse(localStorage.getItem(CLOUDFLARE_URLS_KEY) || '{}') as Record<string, string>;
-  } catch {
-    return {};
-  }
 }
 
 function AdminPage() {
-  const { models, loading, error, refresh } = useSheetModels();
-  const codes = useModelCodes(models);
-  const [savedUrls, setSavedUrls] = useState<Record<string, string>>(readCloudflareUrls);
+  const [session, setSession] = useState<SupabaseSession | null>(readAdminSession);
+  const [models, setModels] = useState<Live2DModel[]>([]);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [modelName, setModelName] = useState('');
-  const [driveUrl, setDriveUrl] = useState('');
   const [cloudflareUrl, setCloudflareUrl] = useState('');
+  const [draftUrls, setDraftUrls] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(Boolean(session));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [formError, setFormError] = useState('');
 
-  function addModel(event: FormEvent) {
+  async function loadModels(auth: SupabaseSession) {
+    const membership = await supabaseRequest<{ user_id: string }[]>(
+      'rest/v1/live2d_admins?select=user_id&user_id=eq.' + encodeURIComponent(auth.user.id),
+      { token: auth.access_token }
+    );
+    if (membership.length === 0) throw new Error('이 Supabase 계정에 관리자 권한이 없습니다.');
+    const rows = await supabaseRequest<Live2DModel[]>(
+      'rest/v1/live2d_models?select=id,code,name,cloudflare_url,enabled,created_at&order=created_at.desc',
+      { token: auth.access_token }
+    );
+    setModels(rows);
+  }
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !session) {
+      setLoading(false);
+      return;
+    }
+    let active = true;
+    void loadModels(session).catch(e => {
+      if (!active) return;
+      setError(e instanceof Error ? e.message : '관리자 정보를 확인하지 못했습니다.');
+      sessionStorage.removeItem(ADMIN_SESSION_KEY);
+      setSession(null);
+    }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [session]);
+
+  async function logIn(event: FormEvent) {
     event.preventDefault();
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const auth = await signInWithPassword(email.trim(), password);
+      await loadModels(auth);
+      sessionStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(auth));
+      setSession(auth);
+      setPassword('');
+      setNotice('Supabase 관리자에 연결했습니다.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '로그인에 실패했습니다.');
+    } finally {
+      setBusy(false);
+      setLoading(false);
+    }
+  }
+
+  async function logOut() {
+    if (session) {
+      try { await signOut(session); } catch { /* local session is still cleared */ }
+    }
+    sessionStorage.removeItem(ADMIN_SESSION_KEY);
+    setSession(null);
+    setModels([]);
+    setError('');
+    setNotice('');
+  }
+
+  async function addModel(event: FormEvent) {
+    event.preventDefault();
+    if (!session) return;
     const cleanName = modelName.trim();
-    const cleanDriveUrl = driveUrl.trim();
-    const cleanCloudflareUrl = cloudflareUrl.trim();
-    if (!cleanName) {
-      setFormError('모델명을 입력해 주세요.');
-      return;
-    }
-
-    let drive: URL;
+    const cleanUrl = cloudflareUrl.trim();
+    if (!cleanName) { setError('모델명을 입력해 주세요.'); return; }
     try {
-      drive = new URL(cleanDriveUrl);
-      if (drive.protocol !== 'https:' || !['drive.google.com', 'docs.google.com'].includes(drive.hostname)) throw new Error('invalid Drive URL');
+      const parsed = new URL(cleanUrl);
+      if (parsed.protocol !== 'https:') throw new Error('invalid URL');
     } catch {
-      setFormError('https://drive.google.com/ 또는 docs.google.com 주소를 입력해 주세요.');
+      setError('https://로 시작하는 공개 Cloudflare 주소를 입력해 주세요.');
       return;
     }
-
-    if (cleanCloudflareUrl) {
-      try {
-        const cloudflare = new URL(cleanCloudflareUrl);
-        if (cloudflare.protocol !== 'https:' && cloudflare.protocol !== 'http:') throw new Error('invalid URL');
-      } catch {
-        setFormError('Cloudflare 주소는 http:// 또는 https://로 시작해야 합니다.');
-        return;
-      }
-    }
-
-    let added: SheetModel[] = [];
+    let code = '';
+    do { code = String(Math.floor(1000 + Math.random() * 9000)); }
+    while (models.some(model => model.code === code));
+    setBusy(true);
+    setError('');
+    setNotice('');
     try {
-      const raw = localStorage.getItem(ADDED_MODELS_KEY);
-      if (raw) added = JSON.parse(raw) as SheetModel[];
-      const folderId = cleanDriveUrl.match(/\/folders\/([a-zA-Z0-9_-]+)/)?.[1] || null;
-      const model: SheetModel = {
-        id: 'added-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
-        nickname: cleanName,
-        driveUrl: cleanDriveUrl,
-        folderId
-      };
-      localStorage.setItem(ADDED_MODELS_KEY, JSON.stringify([...added, model]));
-      if (cleanCloudflareUrl) {
-        const nextUrls = { ...savedUrls, [model.id]: cleanCloudflareUrl };
-        localStorage.setItem(CLOUDFLARE_URLS_KEY, JSON.stringify(nextUrls));
-        setSavedUrls(nextUrls);
-      }
+      await supabaseRequest<Live2DModel[]>('rest/v1/live2d_models', {
+        method: 'POST',
+        token: session.access_token,
+        prefer: 'return=representation',
+        body: { code, name: cleanName, cloudflare_url: cleanUrl, enabled: true }
+      });
       setModelName('');
-      setDriveUrl('');
       setCloudflareUrl('');
-      setFormError('');
-      setNotice('새 모델을 추가했습니다. 입장 코드 목록에 반영됐습니다.');
-      void refresh();
-    } catch {
-      setFormError('브라우저에 저장하지 못했습니다. 저장 공간을 확인해 주세요.');
-      setNotice('');
+      await loadModels(session);
+      setNotice('모델을 Supabase에 저장했습니다. 공개 목록에 자동 반영됩니다.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '모델을 저장하지 못했습니다.');
+    } finally {
+      setBusy(false);
     }
   }
 
-  function downloadJson() {
-    const data = models.map(model => ({
-      code: codes[model.id] || null,
-      name: model.nickname,
-      driveUrl: model.driveUrl,
-      cloudflareUrl: savedUrls[model.id] || null
-    }));
-    const fileUrl = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
-    const anchor = document.createElement('a');
-    anchor.href = fileUrl;
-    anchor.download = 'live2d-models.json';
-    anchor.click();
-    URL.revokeObjectURL(fileUrl);
+  async function saveUrl(model: Live2DModel) {
+    if (!session) return;
+    const value = (draftUrls[model.id] ?? model.cloudflare_url).trim();
+    try {
+      const parsed = new URL(value);
+      if (parsed.protocol !== 'https:') throw new Error('invalid URL');
+    } catch {
+      setError('https://로 시작하는 Cloudflare 주소를 입력해 주세요.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      await supabaseRequest<Live2DModel[]>('rest/v1/live2d_models?id=eq.' + encodeURIComponent(model.id), {
+        method: 'PATCH',
+        token: session.access_token,
+        prefer: 'return=representation',
+        body: { cloudflare_url: value }
+      });
+      await loadModels(session);
+      setNotice('Cloudflare 주소를 Supabase에 저장했습니다.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '주소를 저장하지 못했습니다.');
+    } finally {
+      setBusy(false);
+    }
   }
 
-  const exportJson = JSON.stringify(models.map(model => ({
-    code: codes[model.id] || null,
-    name: model.nickname,
-    driveUrl: model.driveUrl,
-    cloudflareUrl: savedUrls[model.id] || null
-  })), null, 2);
+  if (!isSupabaseConfigured) return <section className="admin-page"><SetupNotice/></section>;
+
+  if (!session) return <section className="entry-layout access-layout">
+    <div className="hero-copy-block"><div className="eyebrow">ADMIN CHANNEL</div><h1>모델을 관리하고,<br/><span className="gradient-text">Cloudflare로 연결하세요.</span></h1><p className="hero-copy">Supabase Auth 관리자 계정으로 로그인합니다. 모델 목록과 주소는 Supabase에 저장되어 사이트에 자동 반영됩니다.</p></div>
+    <div className="entry-card access-card"><div className="eyebrow">SUPABASE ADMIN</div><h2>관리자 로그인</h2><p className="muted">Supabase에서 미리 만든 관리자 계정을 사용하세요.</p>
+      <form className="form-stack" onSubmit={logIn}>
+        <label>이메일<input type="email" value={email} onChange={event => setEmail(event.target.value)} autoComplete="username" required /></label>
+        <label>비밀번호<input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" required /></label>
+        {error && <p className="inline-error">{error}</p>}
+        <button className="button full" type="submit" disabled={busy}>{busy ? '연결 중…' : '로그인'}</button>
+      </form>
+    </div>
+  </section>;
 
   return <section className="admin-page">
-    <div className="page-heading">
-      <div><div className="eyebrow">ADMIN CHANNEL</div><h1>모델 관리</h1><p className="muted">등록된 모델을 확인하고 새 Drive 폴더를 추가합니다.</p></div>
-      <div className="admin-heading-actions"><button className="button secondary" onClick={() => void refresh()} disabled={loading}><RefreshCw size={15}/> 목록 새로고침</button><button className="button" onClick={downloadJson} disabled={loading || models.length === 0}><Download size={15}/> JSON 다운로드</button></div>
-    </div>
-
-    <div className="admin-notice"><strong>다른 사이트에 적용하기</strong><span>새 모델을 추가한 뒤 JSON을 다운로드해 공개 위치에 올리면, 다른 사이트에서 모델 목록과 주소를 불러올 수 있습니다.</span></div>
-
-    <form className="admin-add-form" onSubmit={addModel}>
-      <div className="admin-add-heading"><div className="eyebrow">ADD A NEW MODEL</div><h2>새 Drive 모델 추가</h2><p className="muted">새 모델명과 Google Drive 폴더 주소를 등록하세요. Cloudflare 주소는 선택 입력입니다.</p></div>
-      <div className="admin-add-grid">
-        <label>모델명 (입장 비밀번호)
-          <input value={modelName} onChange={event => { setModelName(event.target.value); setFormError(''); }} placeholder="예: 차서나 모델" required />
-        </label>
-        <label>새 Google Drive 폴더 주소
-          <input type="url" value={driveUrl} onChange={event => { setDriveUrl(event.target.value); setFormError(''); }} placeholder="https://drive.google.com/drive/folders/…" required />
-        </label>
-        <label>Cloudflare 모델 주소 (선택)
-          <input type="url" value={cloudflareUrl} onChange={event => { setCloudflareUrl(event.target.value); setFormError(''); }} placeholder="https://… (나중에 추가 가능)" />
-        </label>
+    <div className="page-heading"><div><div className="eyebrow">SUPABASE ADMIN</div><h1>모델 관리</h1><p className="muted">모델명과 Cloudflare 주소는 Supabase에 저장됩니다.</p></div><button className="button ghost small" onClick={() => void logOut()}><LogOut size={15}/> 로그아웃</button></div>
+    {loading && <div className="empty-state"><RefreshCw className="spin" size={24}/><p>Supabase 연결 중…</p></div>}
+    {!loading && error && <p className="inline-error">{error}</p>}
+    {notice && <p className="admin-success">{notice}</p>}
+    {!loading && <form className="admin-add-form" onSubmit={addModel}>
+      <div className="admin-add-heading"><div className="eyebrow">ADD A NEW MODEL</div><h2>새 Cloudflare 모델 추가</h2><p className="muted">Cloudflare R2 등에 업로드한 모델의 공개 HTTPS 주소를 입력하세요.</p></div>
+      <div className="admin-add-grid supabase-add-grid">
+        <label>모델명 (입장 비밀번호)<input value={modelName} onChange={event => setModelName(event.target.value)} placeholder="예: 차서나 모델" required /></label>
+        <label>Cloudflare 공개 주소<input type="url" value={cloudflareUrl} onChange={event => setCloudflareUrl(event.target.value)} placeholder="https://…/model.model3.json" required /></label>
       </div>
-      {formError && <p className="inline-error">{formError}</p>}
-      {notice && <p className="admin-success">{notice}</p>}
-      <button className="button" type="submit"><Save size={15}/> 새 모델 추가</button>
-    </form>
-
-    {loading ? <div className="empty-state"><RefreshCw className="spin" size={27}/><p>모델 목록을 불러오는 중…</p></div>
-      : error ? <div className="error-state"><h3>시트 데이터를 불러오지 못했습니다.</h3><p>{error}</p><button className="button" onClick={() => void refresh()}>다시 시도</button></div>
-      : <><div className="admin-list-heading"><h2>등록된 모델 <span>{models.length}</span></h2><p className="muted">4자리 입장 코드와 원래 이름을 확인할 수 있습니다.</p></div>
-        {models.length === 0 ? <div className="empty-state"><p>등록된 모델이 없습니다.</p></div>
-        : <div className="admin-model-list">{models.map(model => <article className="admin-model-row" key={model.id}>
-          <div className="admin-model-identity"><span className="admin-code">{codes[model.id] || '----'}</span><div><strong>{model.nickname}</strong><span className="muted">{model.id.startsWith('added-') ? '관리자 추가 모델' : '기존 시트 모델'}</span></div></div>
-          <div className="admin-drive-link"><span>Google Drive 주소</span><a href={model.driveUrl} target="_blank" rel="noreferrer">{model.driveUrl}<ExternalLink size={13}/></a></div>
-          <div className="admin-drive-link"><span>Cloudflare 주소</span>{savedUrls[model.id] ? <a href={savedUrls[model.id]} target="_blank" rel="noreferrer">{savedUrls[model.id]}<ExternalLink size={13}/></a> : <span className="muted">미등록</span>}</div>
-        </article>)}</div>}</>}
-    {!loading && !error && models.length > 0 && <details className="admin-export">
-      <summary>다른 사이트용 JSON 미리보기</summary>
-      <textarea readOnly value={exportJson} aria-label="JSON export preview"/>
-    </details>}
-    <p className="admin-footnote">새 모델은 현재 브라우저에 저장됩니다. 여러 기기와 방문자에게 공유하려면 JSON을 다운로드해 공개 위치에 올려야 합니다.</p>
+      <button className="button" type="submit" disabled={busy}><Save size={15}/> Supabase에 저장</button>
+    </form>}
+    {!loading && !error && <><div className="admin-list-heading"><h2>등록된 모델 <span>{models.length}</span></h2><p className="muted">랜덤 코드와 실제 모델명을 확인할 수 있습니다.</p></div>
+      {models.length === 0 ? <div className="empty-state"><p>아직 모델이 없습니다.</p></div> : <div className="admin-model-list">
+        {models.map(model => <article className="admin-model-row supabase-model-row" key={model.id}>
+          <div className="admin-model-identity"><span className="admin-code">{model.code}</span><div><strong>{model.name}</strong><span className="muted">{model.enabled ? '사용 중' : '숨김'}</span></div></div>
+          <label className="admin-drive-link supabase-url-field"><span>Cloudflare 공개 주소</span><input type="url" value={draftUrls[model.id] ?? model.cloudflare_url} onChange={event => setDraftUrls(current => ({ ...current, [model.id]: event.target.value }))} /></label>
+          <div className="supabase-row-actions"><a className="button ghost small" href={model.cloudflare_url} target="_blank" rel="noreferrer">주소 열기 <ExternalLink size={13}/></a><button className="button secondary small" onClick={() => void saveUrl(model)} disabled={busy}><Save size={13}/> 저장</button></div>
+        </article>)}
+      </div>}
+    </>}
   </section>;
 }
 
-function ViewerPage({ authorizedId }: { authorizedId: string }) {
+function ViewerPage({ model }: { model: Live2DModel }) {
   const { id } = useParams();
-  const { models, loading, error } = useSheetModels();
   const requestedId = decodeURIComponent(id || '');
-  const model = models.find(item => item.id === requestedId);
-  const cloudflareUrl = readCloudflareUrls()[authorizedId];
-
-  if (requestedId !== authorizedId) return <Navigate to="/" replace/>;
-  if (loading) return <p className="muted">모델 정보를 불러오는 중…</p>;
-  if (error || !model) return <div className="empty-state"><h2>모델을 찾을 수 없습니다.</h2><p>{error}</p><Link className="button" to="/">모델 선택으로</Link></div>;
-
-  const modelUrl = cloudflareUrl || model.driveUrl;
+  if (requestedId !== model.id) return <Navigate to="/" replace/>;
   return <section>
     <Link to="/" className="back-link"><ArrowLeft size={16}/> 모델 코드 목록</Link>
     <div className="viewer-layout">
-      <div className="viewer-stage">
-        <div className="stage-grid"></div>
-        <div className="viewer-placeholder">
-          <div className="avatar-large"><Box size={56}/></div>
-          <span className="eyebrow">{cloudflareUrl ? 'CLOUDFLARE MODEL LINKED' : 'DRIVE FOLDER CONNECTED'}</span>
-          <h2>{model.nickname}</h2>
-          <p>{cloudflareUrl ? 'Cloudflare 모델 주소가 연결되었습니다.' : 'Drive 폴더 링크가 연결되었습니다.'}</p>
-          <span className="muted">실제 Live2D 렌더링을 위해서는 모델 파일과 Cubism SDK 연결이 필요합니다.</span>
-          <a className="button drive-button" href={modelUrl} target="_blank" rel="noreferrer">{cloudflareUrl ? 'Cloudflare 모델 열기' : 'Google Drive 폴더 열기'} <ExternalLink size={15}/></a>
-        </div>
-        <div className="stage-corner">FOLDER / {model.folderId || 'LINK'}</div>
-      </div>
-      <aside className="panel">
-        <div className="eyebrow">MODEL SOURCE</div>
-        <h2>{model.nickname}</h2>
-        <p className="muted">비밀번호를 확인한 모델의 정보입니다.</p>
-        <div className="detail-field"><span>모델명</span><strong>{model.nickname}</strong></div>
-        <div className="detail-field"><span>Drive 폴더 ID</span><code>{model.folderId || 'URL에서 추출하지 못함'}</code></div>
-        <div className="detail-field"><span>Cloudflare 주소</span>{cloudflareUrl ? <a href={cloudflareUrl} target="_blank" rel="noreferrer">{cloudflareUrl} <ExternalLink size={13}/></a> : <span className="muted">관리자 화면에서 추가할 수 있습니다.</span>}</div>
-        <div className="detail-field"><span>Drive 폴더 주소</span><a href={model.driveUrl} target="_blank" rel="noreferrer">새 탭에서 열기 <ExternalLink size={13}/></a></div>
-        <div className="divider"></div>
-        <h3><MousePointer2 size={16}/> 마우스 트래킹</h3>
-        <p className="muted">Cubism SDK 연결 후 실제 모델 파라미터에 마우스 위치를 연결할 예정입니다.</p>
+      <div className="viewer-stage"><div className="stage-grid"></div><div className="viewer-placeholder">
+        <div className="avatar-large"><Box size={56}/></div><span className="eyebrow">CLOUDFLARE MODEL LINKED</span><h2>{model.name}</h2>
+        <p>Cloudflare 모델 주소가 연결되었습니다.</p><span className="muted">모델 원본은 Cloudflare에서 불러옵니다.</span>
+        <a className="button drive-button" href={model.cloudflare_url} target="_blank" rel="noreferrer">Cloudflare 모델 주소 열기 <ExternalLink size={15}/></a>
+      </div><div className="stage-corner">MODEL / {model.code}</div></div>
+      <aside className="panel"><div className="eyebrow">MODEL SOURCE</div><h2>{model.name}</h2><p className="muted">Supabase에서 확인한 모델 정보입니다.</p>
+        <div className="detail-field"><span>모델 코드</span><strong>{model.code}</strong></div>
+        <div className="detail-field"><span>Cloudflare 주소</span><a href={model.cloudflare_url} target="_blank" rel="noreferrer">{model.cloudflare_url} <ExternalLink size={13}/></a></div>
+        <div className="divider"></div><h3><MousePointer2 size={16}/> 마우스 트래킹</h3><p className="muted">실제 Live2D 렌더링은 Cubism SDK 연결 후 적용할 수 있습니다.</p>
       </aside>
     </div>
   </section>;
 }
 
 export default function App() {
-  const [authorizedId, setAuthorizedId] = useState(() => {
-    try { return sessionStorage.getItem(AUTHORIZED_MODEL_KEY) || ''; } catch { return ''; }
-  });
-  const [authorizedCode, setAuthorizedCode] = useState(() => {
-    try { return sessionStorage.getItem(AUTHORIZED_CODE_KEY) || ''; } catch { return ''; }
-  });
+  const [authorizedModel, setAuthorizedModel] = useState<Live2DModel | null>(readAuthorizedModel);
 
-  function enter(modelId: string, code: string) {
-    try {
-      sessionStorage.setItem(AUTHORIZED_MODEL_KEY, modelId);
-      sessionStorage.setItem(AUTHORIZED_CODE_KEY, code);
-    } catch {
-      // Keep the current page usable when browser storage is unavailable.
-    }
-    setAuthorizedId(modelId);
-    setAuthorizedCode(code);
+  function enter(model: Live2DModel) {
+    sessionStorage.setItem(AUTHORIZED_MODEL_KEY, JSON.stringify(model));
+    setAuthorizedModel(model);
   }
 
   function exit() {
-    try {
-      sessionStorage.removeItem(AUTHORIZED_MODEL_KEY);
-      sessionStorage.removeItem(AUTHORIZED_CODE_KEY);
-    } catch {
-      // Ignore unavailable browser storage.
-    }
-    setAuthorizedId('');
-    setAuthorizedCode('');
+    sessionStorage.removeItem(AUTHORIZED_MODEL_KEY);
+    setAuthorizedModel(null);
   }
 
-  return <Shell code={authorizedCode} onExit={exit}>
+  return <Shell model={authorizedModel} onExit={exit}>
     <Routes>
       <Route path="/" element={<AccessPage onEnter={enter}/>}/>
       <Route path="/admin" element={<AdminPage/>}/>
-      <Route path="/models/:id" element={authorizedId ? <ViewerPage authorizedId={authorizedId}/> : <Navigate to="/" replace/>}/>
+      <Route path="/models/:id" element={authorizedModel ? <ViewerPage model={authorizedModel}/> : <Navigate to="/" replace/>}/>
       <Route path="*" element={<Navigate to="/" replace/>}/>
     </Routes>
   </Shell>;
