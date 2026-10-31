@@ -1,24 +1,14 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
-import { Link, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Box, ExternalLink, LogOut, MousePointer2, RefreshCw, Save, UserRound } from 'lucide-react';
+import { Link, Navigate, Route, Routes } from 'react-router-dom';
+import { Box, ExternalLink, LogOut, RefreshCw, Save } from 'lucide-react';
 import { isSupabaseConfigured, signInWithPassword, signOut, supabaseRequest } from './lib/supabase';
 import type { Live2DModel, SupabaseSession } from './lib/supabase';
 
-const AUTHORIZED_MODEL_KEY = 'live2d-authorized-model';
 const ADMIN_SESSION_KEY = 'live2d-supabase-admin-session';
 
 function normalizeModelName(value: string): string {
   return value.normalize('NFC').trim();
-}
-
-function readAuthorizedModel(): Live2DModel | null {
-  try {
-    const raw = sessionStorage.getItem(AUTHORIZED_MODEL_KEY);
-    return raw ? JSON.parse(raw) as Live2DModel : null;
-  } catch {
-    return null;
-  }
 }
 
 function readAdminSession(): SupabaseSession | null {
@@ -30,11 +20,11 @@ function readAdminSession(): SupabaseSession | null {
   }
 }
 
-function Shell({ model, onExit, children }: { model: Live2DModel | null; onExit: () => void; children: ReactNode }) {
+function Shell({ children }: { children: ReactNode }) {
   return <div className="app-shell">
     <header className="topbar">
       <Link to="/" className="brand"><span className="brand-mark"><Box size={19}/></span> Live2D Studio <span className="dev-tag">CLOUDFLARE</span></Link>
-      <nav><Link to="/admin" className="button ghost small">관리자</Link>{model && <><span className="nickname"><UserRound size={15}/> 모델 코드 {model.code}</span><button className="button ghost small" onClick={onExit}><LogOut size={15}/> 나가기</button></>}</nav>
+      <nav><Link to="/admin" className="button ghost small">관리자</Link></nav>
     </header>
     <main className="main">{children}</main>
     <footer>Live2D Studio · Cloudflare 모델 주소 · Supabase 모델 목록</footer>
@@ -52,87 +42,6 @@ function SetupNotice() {
       <li>Supabase Auth에서 관리자 계정을 만든 뒤, README의 안내대로 관리자 권한을 연결합니다.</li>
     </ol>
   </div>;
-}
-
-function AccessPage({ onEnter }: { onEnter: (model: Live2DModel) => void }) {
-  const [models, setModels] = useState<Live2DModel[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [selectedCode, setSelectedCode] = useState('');
-  const [password, setPassword] = useState('');
-  const [formError, setFormError] = useState('');
-  const navigate = useNavigate();
-  const selectedModel = models.find(model => model.code === selectedCode);
-
-  async function refresh() {
-    if (!isSupabaseConfigured) {
-      setError('Supabase 프로젝트 주소와 공개용 키를 먼저 설정해 주세요.');
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError('');
-    try {
-      const rows = await supabaseRequest<Live2DModel[]>(
-        'rest/v1/live2d_models?select=id,code,name,cloudflare_url,enabled&enabled=eq.true&order=created_at.desc'
-      );
-      setModels(rows);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Supabase 모델 목록을 불러오지 못했습니다.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => { void refresh(); }, []);
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!selectedModel) {
-      setFormError('먼저 모델 코드를 선택해 주세요.');
-      return;
-    }
-    if (normalizeModelName(password) !== normalizeModelName(selectedModel.name)) {
-      setFormError('비밀번호가 맞지 않습니다. 원래 모델명을 확인해 주세요.');
-      return;
-    }
-    onEnter(selectedModel);
-    navigate('/models/' + encodeURIComponent(selectedModel.id));
-  }
-
-  if (!isSupabaseConfigured) {
-    return <section className="entry-layout access-layout"><div className="hero-copy-block"><div className="eyebrow"><span className="live-dot"/> LIVE2D MODEL LAB</div><h1>모델을 만나고,<br/><span className="gradient-text">직접 움직여 보세요.</span></h1><p className="hero-copy">모델 목록은 Supabase에서, 모델 파일은 Cloudflare에서 불러옵니다.</p></div><SetupNotice/></section>;
-  }
-
-  return <section className="entry-layout access-layout">
-    <div className="hero-copy-block">
-      <div className="eyebrow"><span className="live-dot"/> LIVE2D MODEL LAB</div>
-      <h1>모델 코드를 고르고,<br/><span className="gradient-text">이름으로 입장하세요.</span></h1>
-      <p className="hero-copy">4자리 모델 코드를 선택하고 원래 모델명을 입력하면 Cloudflare 모델 주소로 연결됩니다.</p>
-      <div className="mini-points"><span><Box size={15}/> 4자리 모델 코드</span><span><UserRound size={15}/> 모델명 비밀번호</span><span><MousePointer2 size={15}/> Cloudflare 연결</span></div>
-    </div>
-
-    <div className="entry-card access-card">
-      <div className="entry-icon"><Box size={23}/></div>
-      <div className="eyebrow">MODEL ACCESS</div>
-      <h2>모델 선택하기</h2>
-      <p className="muted">모델 목록을 Supabase에서 불러옵니다.</p>
-      {loading ? <div className="empty-state compact-state"><RefreshCw className="spin" size={24}/><p>Supabase 연결 중…</p></div>
-        : error ? <div className="error-state compact-state"><p>{error}</p><button className="button" onClick={() => void refresh()}>다시 시도</button></div>
-        : models.length === 0 ? <div className="empty-state compact-state"><p>등록된 모델이 없습니다. 관리자 화면에서 모델을 추가해 주세요.</p><Link className="button" to="/admin">관리자 열기</Link></div>
-        : <div className="model-code-list" aria-label="모델 코드 목록">
-          {models.map((model, index) => <button key={model.id} type="button" className={'model-code-option' + (selectedCode === model.code ? ' selected' : '')} onClick={() => { setSelectedCode(model.code); setPassword(''); setFormError(''); }} aria-pressed={selectedCode === model.code}>
-            <span className="model-code-number">{model.code}</span><span className="model-code-caption">MODEL {String(index + 1).padStart(2, '0')}</span>
-          </button>)}
-        </div>}
-      {!loading && !error && models.length > 0 && <form className="form-stack access-form" onSubmit={submit}>
-        <div className="selected-model-label">{selectedModel ? <>선택한 코드 <strong>{selectedModel.code}</strong></> : '모델 코드를 선택해 주세요.'}</div>
-        <label>원래 모델명 (비밀번호)<input type="text" autoComplete="off" value={password} onChange={event => { setPassword(event.target.value); setFormError(''); }} placeholder="모델의 원래 이름 입력" required /></label>
-        {formError && <p className="inline-error">{formError}</p>}
-        <button className="button full" type="submit" disabled={!selectedModel}>입장하기 <ArrowLeft className="flip" size={16}/></button>
-      </form>}
-    </div>
-  </section>;
 }
 
 function AdminPage() {
@@ -312,46 +221,11 @@ function AdminPage() {
   </section>;
 }
 
-function ViewerPage({ model }: { model: Live2DModel }) {
-  const { id } = useParams();
-  const requestedId = decodeURIComponent(id || '');
-  if (requestedId !== model.id) return <Navigate to="/" replace/>;
-  return <section>
-    <Link to="/" className="back-link"><ArrowLeft size={16}/> 모델 코드 목록</Link>
-    <div className="viewer-layout">
-      <div className="viewer-stage"><div className="stage-grid"></div><div className="viewer-placeholder">
-        <div className="avatar-large"><Box size={56}/></div><span className="eyebrow">CLOUDFLARE MODEL LINKED</span><h2>{model.name}</h2>
-        <p>Cloudflare 모델 주소가 연결되었습니다.</p><span className="muted">모델 원본은 Cloudflare에서 불러옵니다.</span>
-        <a className="button drive-button" href={model.cloudflare_url} target="_blank" rel="noreferrer">Cloudflare 모델 주소 열기 <ExternalLink size={15}/></a>
-      </div><div className="stage-corner">MODEL / {model.code}</div></div>
-      <aside className="panel"><div className="eyebrow">MODEL SOURCE</div><h2>{model.name}</h2><p className="muted">Supabase에서 확인한 모델 정보입니다.</p>
-        <div className="detail-field"><span>모델 코드</span><strong>{model.code}</strong></div>
-        <div className="detail-field"><span>Cloudflare 주소</span><a href={model.cloudflare_url} target="_blank" rel="noreferrer">{model.cloudflare_url} <ExternalLink size={13}/></a></div>
-        <div className="divider"></div><h3><MousePointer2 size={16}/> 마우스 트래킹</h3><p className="muted">실제 Live2D 렌더링은 Cubism SDK 연결 후 적용할 수 있습니다.</p>
-      </aside>
-    </div>
-  </section>;
-}
-
 export default function App() {
-  const [authorizedModel, setAuthorizedModel] = useState<Live2DModel | null>(readAuthorizedModel);
-
-  function enter(model: Live2DModel) {
-    sessionStorage.setItem(AUTHORIZED_MODEL_KEY, JSON.stringify(model));
-    setAuthorizedModel(model);
-  }
-
-  function exit() {
-    sessionStorage.removeItem(AUTHORIZED_MODEL_KEY);
-    setAuthorizedModel(null);
-  }
-
-  return <Shell model={authorizedModel} onExit={exit}>
-    <Routes>
-      <Route path="/" element={<AccessPage onEnter={enter}/>}/>
-      <Route path="/admin" element={<AdminPage/>}/>
-      <Route path="/models/:id" element={authorizedModel ? <ViewerPage model={authorizedModel}/> : <Navigate to="/" replace/>}/>
-      <Route path="*" element={<Navigate to="/" replace/>}/>
-    </Routes>
-  </Shell>;
+  return <Routes>
+    <Route path="/" element={<Navigate to="/tracking/" replace/>}/>
+    <Route path="/tracking" element={<Navigate to="/tracking/" replace/>}/>
+    <Route path="/admin" element={<Shell><AdminPage/></Shell>}/>
+    <Route path="*" element={<Navigate to="/" replace/>}/>
+  </Routes>;
 }

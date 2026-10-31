@@ -19,7 +19,7 @@ alter table public.live2d_models enable row level security;
 alter table public.live2d_admins enable row level security;
 
 revoke all on table public.live2d_models from anon, authenticated;
-grant select on table public.live2d_models to anon;
+grant select (cloudflare_url, created_at) on table public.live2d_models to anon;
 grant select, insert, update, delete on table public.live2d_models to authenticated;
 
 revoke all on table public.live2d_admins from anon, authenticated;
