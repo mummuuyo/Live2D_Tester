@@ -8,6 +8,10 @@ import type { Live2DModel, SupabaseSession } from './lib/supabase';
 const AUTHORIZED_MODEL_KEY = 'live2d-authorized-model';
 const ADMIN_SESSION_KEY = 'live2d-supabase-admin-session';
 
+function normalizeModelName(value: string): string {
+  return value.normalize('NFC').trim();
+}
+
 function readAuthorizedModel(): Live2DModel | null {
   try {
     const raw = sessionStorage.getItem(AUTHORIZED_MODEL_KEY);
@@ -88,7 +92,7 @@ function AccessPage({ onEnter }: { onEnter: (model: Live2DModel) => void }) {
       setFormError('먼저 모델 코드를 선택해 주세요.');
       return;
     }
-    if (password.trim() !== selectedModel.name) {
+    if (normalizeModelName(password) !== normalizeModelName(selectedModel.name)) {
       setFormError('비밀번호가 맞지 않습니다. 원래 모델명을 확인해 주세요.');
       return;
     }
@@ -206,7 +210,7 @@ function AdminPage() {
   async function addModel(event: FormEvent) {
     event.preventDefault();
     if (!session) return;
-    const cleanName = modelName.trim();
+    const cleanName = normalizeModelName(modelName);
     const cleanUrl = cloudflareUrl.trim();
     if (!cleanName) { setError('모델명을 입력해 주세요.'); return; }
     try {
