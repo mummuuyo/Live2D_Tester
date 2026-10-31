@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { FormEvent } from 'react';
 import { Link, Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { ArrowLeft, Box, ExternalLink, FileSpreadsheet, LogOut, MousePointer2, RefreshCw, UserRound } from 'lucide-react';
 import { loadSheetModels, SHEET_CSV_URL } from './lib/sheet';
@@ -9,7 +10,7 @@ function Shell({nickname,onExit,children}:{nickname:string;onExit:()=>void;child
 }
 function EntryPage({onEnter}:{onEnter:(nickname:string)=>void}) {
   const [nickname,setNickname]=useState(''); const [error,setError]=useState('');
-  function submit(event:FormEvent){event.preventDefault();const clean=nickname.trim().replace(/\\s+/g,' ');if(clean.length<2||clean.length>16){setError('닉네임은 2~16자로 입력해 주세요.');return;}onEnter(clean);}
+  function submit(event:FormEvent){event.preventDefault();const clean=nickname.trim().replace(/\s+/g, ' ');if(clean.length<2||clean.length>16){setError('닉네임은 2~16자로 입력해 주세요.');return;}onEnter(clean);}
   return <section className="entry-layout"><div className="hero-copy-block"><div className="eyebrow"><span className="live-dot"/> LIVE2D MODEL LAB</div><h1>모델을 만나고,<br/><span className="gradient-text">직접 움직여 보세요.</span></h1><p className="hero-copy">닉네임으로 입장하고, Google Sheets에 등록한 모델 목록을 확인하세요.</p><div className="mini-points"><span><FileSpreadsheet size={15}/> 시트 연동</span><span><Box size={15}/> Drive 폴더 연결</span><span><MousePointer2 size={15}/> 트래킹 준비</span></div></div><div className="entry-card"><div className="entry-icon"><UserRound size={23}/></div><div className="eyebrow">GUEST ENTRY</div><h2>체험 시작하기</h2><p className="muted">회원가입 없이 닉네임으로 입장하세요.</p><form className="form-stack" onSubmit={submit}><label>사용할 닉네임<input autoFocus value={nickname} onChange={e=>{setNickname(e.target.value);setError('');}} placeholder="예: 멈무" maxLength={16} required/></label>{error&&<p className="inline-error">{error}</p>}<button className="button full" type="submit">입장하기 <ArrowLeft className="flip" size={16}/></button></form><p className="small-note">닉네임은 테스트용이며 본인 인증 기능은 아닙니다.</p></div></section>;
 }
 function useSheetModels(){
