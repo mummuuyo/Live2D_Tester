@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { Link, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Box, ExternalLink, LogOut, MousePointer2, RefreshCw, UserRound } from 'lucide-react';
-import { loadSheetModels, SHEET_CSV_URL } from './lib/sheet';
+import { loadSheetModels } from './lib/sheet';
 import type { SheetModel } from './types';
 
 const AUTHORIZED_MODEL_KEY = 'live2d-authorized-model-id';
