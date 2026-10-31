@@ -1,19 +1,20 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { Link, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Box, ExternalLink, LogOut, MousePointer2, RefreshCw, UserRound } from 'lucide-react';
+import { ArrowLeft, Box, Download, ExternalLink, LogOut, MousePointer2, RefreshCw, Save, UserRound } from 'lucide-react';
 import { loadSheetModels } from './lib/sheet';
 import type { SheetModel } from './types';
 
 const AUTHORIZED_MODEL_KEY = 'live2d-authorized-model-id';
 const AUTHORIZED_CODE_KEY = 'live2d-authorized-model-code';
 const MODEL_CODES_KEY = 'live2d-model-codes';
+const CLOUDFLARE_URLS_KEY = 'live2d-cloudflare-model-urls';
 
 function Shell({ code, onExit, children }: { code: string; onExit: () => void; children: ReactNode }) {
   return <div className="app-shell">
     <header className="topbar">
       <Link to="/" className="brand"><span className="brand-mark"><Box size={19}/></span> Live2D Studio <span className="dev-tag">MODEL ACCESS</span></Link>
-      <nav>{code && <><span className="nickname"><UserRound size={15}/> 모델 코드 {code}</span><button className="button ghost small" onClick={onExit}><LogOut size={15}/> 나가기</button></>}</nav>
+      <nav><Link to="/admin" className="button ghost small">관리자</Link>{code && <><span className="nickname"><UserRound size={15}/> 모델 코드 {code}</span><button className="button ghost small" onClick={onExit}><LogOut size={15}/> 나가기</button></>}</nav>
     </header>
     <main className="main">{children}</main>
     <footer>Live2D Studio · 모델 코드와 원래 모델명으로 입장</footer>
@@ -162,16 +163,114 @@ function AccessPage({ onEnter }: { onEnter: (modelId: string, code: string) => v
   </section>;
 }
 
+function readCloudflareUrls(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(CLOUDFLARE_URLS_KEY) || '{}') as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+function AdminPage() {
+  const { models, loading, error, refresh } = useSheetModels();
+  const codes = useModelCodes(models);
+  const [savedUrls, setSavedUrls] = useState<Record<string, string>>(readCloudflareUrls);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [notice, setNotice] = useState('');
+  const [formError, setFormError] = useState('');
+
+  function saveUrl(modelId: string) {
+    const value = (drafts[modelId] ?? savedUrls[modelId] ?? '').trim();
+    if (value) {
+      try {
+        const parsed = new URL(value);
+        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error('invalid protocol');
+      } catch {
+        setFormError('http:// 또는 https://로 시작하는 주소를 입력해 주세요.');
+        setNotice('');
+        return;
+      }
+    }
+    const next = { ...savedUrls };
+    if (value) next[modelId] = value;
+    else delete next[modelId];
+    try {
+      localStorage.setItem(CLOUDFLARE_URLS_KEY, JSON.stringify(next));
+    } catch {
+      setFormError('브라우저 저장 공간에 저장하지 못했습니다.');
+      setNotice('');
+      return;
+    }
+    setSavedUrls(next);
+    setDrafts(current => ({ ...current, [modelId]: value }));
+    setFormError('');
+    setNotice('주소를 이 브라우저에 저장했습니다.');
+  }
+
+  function downloadJson() {
+    const data = models.map(model => ({
+      code: codes[model.id] || null,
+      name: model.nickname,
+      driveUrl: model.driveUrl,
+      cloudflareUrl: savedUrls[model.id] || null
+    }));
+    const fileUrl = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+    const anchor = document.createElement('a');
+    anchor.href = fileUrl;
+    anchor.download = 'live2d-models.json';
+    anchor.click();
+    URL.revokeObjectURL(fileUrl);
+  }
+
+  const exportJson = JSON.stringify(models.map(model => ({
+    code: codes[model.id] || null,
+    name: model.nickname,
+    driveUrl: model.driveUrl,
+    cloudflareUrl: savedUrls[model.id] || null
+  })), null, 2);
+
+  return <section className="admin-page">
+    <div className="page-heading">
+      <div><div className="eyebrow">ADMIN CHANNEL</div><h1>모델 관리</h1><p className="muted">4자리 닉네임과 실제 모델명을 확인하고 Cloudflare 주소를 연결합니다.</p></div>
+      <div className="admin-heading-actions"><button className="button secondary" onClick={() => void refresh()} disabled={loading}><RefreshCw size={15}/> 새로고침</button><button className="button" onClick={downloadJson} disabled={loading || models.length === 0}><Download size={15}/> JSON 다운로드</button></div>
+    </div>
+    <div className="admin-notice"><strong>다른 사이트에 적용하기</strong><span>주소를 저장한 뒤 JSON을 다운로드해 공개 위치에 올리면, 다른 사이트에서 모델 목록 데이터로 불러올 수 있습니다.</span></div>
+    {formError && <p className="inline-error">{formError}</p>}
+    {notice && <p className="admin-success">{notice}</p>}
+    {loading ? <div className="empty-state"><RefreshCw className="spin" size={27}/><p>모델 목록을 불러오는 중…</p></div>
+      : error ? <div className="error-state"><h3>시트 데이터를 불러오지 못했습니다.</h3><p>{error}</p><button className="button" onClick={() => void refresh()}>다시 시도</button></div>
+      : models.length === 0 ? <div className="empty-state"><p>관리할 모델이 없습니다.</p></div>
+      : <div className="admin-model-list">{models.map(model => <article className="admin-model-row" key={model.id}>
+        <div className="admin-model-identity"><span className="admin-code">{codes[model.id] || '----'}</span><div><strong>{model.nickname}</strong><span className="muted">실제 모델명 · 비밀번호</span></div></div>
+        <div className="admin-drive-link"><span>현재 Drive 주소</span><a href={model.driveUrl} target="_blank" rel="noreferrer">{model.driveUrl}<ExternalLink size={13}/></a></div>
+        <form className="admin-url-form" onSubmit={event => { event.preventDefault(); saveUrl(model.id); }}>
+          <label>Cloudflare 모델 주소
+            <input type="url" value={drafts[model.id] ?? savedUrls[model.id] ?? ''} onChange={event => { setDrafts(current => ({ ...current, [model.id]: event.target.value })); setNotice(''); setFormError(''); }} placeholder="https://… (Cloudflare 주소)" />
+          </label>
+          <button className="button secondary small" type="submit"><Save size={14}/> 주소 저장</button>
+          {savedUrls[model.id] && <span className="saved-badge">저장됨</span>}
+        </form>
+      </article>)}</div>}
+    {!loading && !error && models.length > 0 && <details className="admin-export">
+      <summary>다른 사이트용 JSON 미리보기</summary>
+      <textarea readOnly value={exportJson} aria-label="JSON export preview"/>
+    </details>}
+    <p className="admin-footnote">저장한 주소는 현재 브라우저에 보관됩니다. 이 화면에서 수정한 값을 여러 기기와 방문자에게 공유하려면 JSON을 공개 위치에 올려 해당 사이트에서 불러와야 합니다.</p>
+  </section>;
+}
+
 function ViewerPage({ authorizedId }: { authorizedId: string }) {
   const { id } = useParams();
   const { models, loading, error } = useSheetModels();
   const requestedId = decodeURIComponent(id || '');
   const model = models.find(item => item.id === requestedId);
+  const cloudflareUrl = readCloudflareUrls()[authorizedId];
 
   if (requestedId !== authorizedId) return <Navigate to="/" replace/>;
   if (loading) return <p className="muted">모델 정보를 불러오는 중…</p>;
   if (error || !model) return <div className="empty-state"><h2>모델을 찾을 수 없습니다.</h2><p>{error}</p><Link className="button" to="/">모델 선택으로</Link></div>;
 
+  const modelUrl = cloudflareUrl || model.driveUrl;
   return <section>
     <Link to="/" className="back-link"><ArrowLeft size={16}/> 모델 코드 목록</Link>
     <div className="viewer-layout">
@@ -179,11 +278,11 @@ function ViewerPage({ authorizedId }: { authorizedId: string }) {
         <div className="stage-grid"></div>
         <div className="viewer-placeholder">
           <div className="avatar-large"><Box size={56}/></div>
-          <span className="eyebrow">DRIVE FOLDER CONNECTED</span>
+          <span className="eyebrow">{cloudflareUrl ? 'CLOUDFLARE MODEL LINKED' : 'DRIVE FOLDER CONNECTED'}</span>
           <h2>{model.nickname}</h2>
-          <p>Drive 폴더 링크가 연결되었습니다.</p>
-          <span className="muted">실제 Live2D 렌더링을 위해서는 폴더 내부 모델 파일과 Cubism SDK를 연결해야 합니다.</span>
-          <a className="button drive-button" href={model.driveUrl} target="_blank" rel="noreferrer">Google Drive 폴더 열기 <ExternalLink size={15}/></a>
+          <p>{cloudflareUrl ? 'Cloudflare 모델 주소가 연결되었습니다.' : 'Drive 폴더 링크가 연결되었습니다.'}</p>
+          <span className="muted">실제 Live2D 렌더링을 위해서는 모델 파일과 Cubism SDK 연결이 필요합니다.</span>
+          <a className="button drive-button" href={modelUrl} target="_blank" rel="noreferrer">{cloudflareUrl ? 'Cloudflare 모델 열기' : 'Google Drive 폴더 열기'} <ExternalLink size={15}/></a>
         </div>
         <div className="stage-corner">FOLDER / {model.folderId || 'LINK'}</div>
       </div>
@@ -193,7 +292,8 @@ function ViewerPage({ authorizedId }: { authorizedId: string }) {
         <p className="muted">비밀번호를 확인한 모델의 정보입니다.</p>
         <div className="detail-field"><span>모델명</span><strong>{model.nickname}</strong></div>
         <div className="detail-field"><span>Drive 폴더 ID</span><code>{model.folderId || 'URL에서 추출하지 못함'}</code></div>
-        <div className="detail-field"><span>폴더 주소</span><a href={model.driveUrl} target="_blank" rel="noreferrer">새 탭에서 열기 <ExternalLink size={13}/></a></div>
+        <div className="detail-field"><span>Cloudflare 주소</span>{cloudflareUrl ? <a href={cloudflareUrl} target="_blank" rel="noreferrer">{cloudflareUrl} <ExternalLink size={13}/></a> : <span className="muted">관리자 화면에서 추가할 수 있습니다.</span>}</div>
+        <div className="detail-field"><span>Drive 폴더 주소</span><a href={model.driveUrl} target="_blank" rel="noreferrer">새 탭에서 열기 <ExternalLink size={13}/></a></div>
         <div className="divider"></div>
         <h3><MousePointer2 size={16}/> 마우스 트래킹</h3>
         <p className="muted">Cubism SDK 연결 후 실제 모델 파라미터에 마우스 위치를 연결할 예정입니다.</p>
@@ -235,6 +335,7 @@ export default function App() {
   return <Shell code={authorizedCode} onExit={exit}>
     <Routes>
       <Route path="/" element={<AccessPage onEnter={enter}/>}/>
+      <Route path="/admin" element={<AdminPage/>}/>
       <Route path="/models/:id" element={authorizedId ? <ViewerPage authorizedId={authorizedId}/> : <Navigate to="/" replace/>}/>
       <Route path="*" element={<Navigate to="/" replace/>}/>
     </Routes>
