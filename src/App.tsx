@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { Link, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Box, ExternalLink, FileSpreadsheet, LogOut, MousePointer2, RefreshCw, UserRound } from 'lucide-react';
+import { ArrowLeft, Box, ExternalLink, LogOut, MousePointer2, RefreshCw, UserRound } from 'lucide-react';
 import { loadSheetModels, SHEET_CSV_URL } from './lib/sheet';
 import type { SheetModel } from './types';
 
@@ -162,28 +162,44 @@ function AccessPage({ onEnter }: { onEnter: (modelId: string, code: string) => v
   </section>;
 }
 
-function ModelListPage({ nickname }: { nickname: string }) {
-  const { models, loading, error, lastUpdated, refresh } = useSheetModels();
-  return <section>
-    <div className="page-heading"><div><div className="eyebrow">GOOGLE SHEETS MODEL LIST</div><h1>반가워요, {nickname}님</h1><p className="muted">공개 시트에 등록된 Drive 폴더를 불러옵니다.</p></div><button className="button secondary" onClick={() => void refresh()} disabled={loading}><RefreshCw size={15}/> 새로고침</button></div>
-    <div className="notice"><FileSpreadsheet size={16}/><span>시트 수정 후 새로고침하면 목록에 반영됩니다.</span><a href={SHEET_CSV_URL} target="_blank" rel="noreferrer">CSV 확인 <ExternalLink size={13}/></a></div>
-    {loading ? <div className="empty-state"><RefreshCw className="spin" size={27}/><h3>Google Sheets 읽는 중…</h3></div>
-      : error ? <div className="error-state"><h3>시트 데이터를 불러오지 못했습니다.</h3><p>{error}</p><p className="muted">시트가 웹에 게시되어 있고 CSV 링크가 공개 상태인지 확인해 주세요.</p><button className="button" onClick={() => void refresh()}>다시 시도</button></div>
-      : models.length === 0 ? <div className="empty-state"><Box size={32}/><h3>등록된 모델이 없습니다</h3><p>시트의 닉네임과 Google Drive 주소 열을 확인해 주세요.</p></div>
-      : <><div className="model-grid">{models.map((model, index) => <article className="model-card" key={model.id}><div className="model-thumb"><div className="avatar-placeholder"><Box size={38}/><span>DRIVE MODEL</span></div><span className="card-category">MODEL {String(index + 1).padStart(2, '0')}</span></div><div className="model-card-body"><h3>{model.nickname}</h3><p>Google Drive 폴더가 시트에 등록되어 있습니다.</p><div className="card-actions"><Link className="button small" to={'/models/' + encodeURIComponent(model.id)}>상세 보기</Link><a className="button secondary small" href={model.driveUrl} target="_blank" rel="noreferrer">Drive 폴더 <ExternalLink size={13}/></a></div></div></article>)}</div><div className="section-note"><span className="live-dot"/> {models.length}개 행 · {lastUpdated} 갱신</div></>}
-  </section>;
-}
-
-function ViewerPage({ authorizedId, nickname }: { authorizedId: string; nickname: string }) {
+function ViewerPage({ authorizedId }: { authorizedId: string }) {
   const { id } = useParams();
   const { models, loading, error } = useSheetModels();
-  const model = models.find(item => item.id === decodeURIComponent(id || ''));
+  const requestedId = decodeURIComponent(id || '');
+  const model = models.find(item => item.id === requestedId);
 
-  if (id !== encodeURIComponent(authorizedId)) return <Navigate to="/" replace/>;
-  if (loading) return <p className="muted">시트에서 모델 정보를 불러오는 중…</p>;
+  if (requestedId !== authorizedId) return <Navigate to="/" replace/>;
+  if (loading) return <p className="muted">모델 정보를 불러오는 중…</p>;
   if (error || !model) return <div className="empty-state"><h2>모델을 찾을 수 없습니다.</h2><p>{error}</p><Link className="button" to="/">모델 선택으로</Link></div>;
 
-  return <ModelListPage nickname={nickname}/>;
+  return <section>
+    <Link to="/" className="back-link"><ArrowLeft size={16}/> 모델 코드 목록</Link>
+    <div className="viewer-layout">
+      <div className="viewer-stage">
+        <div className="stage-grid"></div>
+        <div className="viewer-placeholder">
+          <div className="avatar-large"><Box size={56}/></div>
+          <span className="eyebrow">DRIVE FOLDER CONNECTED</span>
+          <h2>{model.nickname}</h2>
+          <p>Drive 폴더 링크가 연결되었습니다.</p>
+          <span className="muted">실제 Live2D 렌더링을 위해서는 폴더 내부 모델 파일과 Cubism SDK를 연결해야 합니다.</span>
+          <a className="button drive-button" href={model.driveUrl} target="_blank" rel="noreferrer">Google Drive 폴더 열기 <ExternalLink size={15}/></a>
+        </div>
+        <div className="stage-corner">FOLDER / {model.folderId || 'LINK'}</div>
+      </div>
+      <aside className="panel">
+        <div className="eyebrow">MODEL SOURCE</div>
+        <h2>{model.nickname}</h2>
+        <p className="muted">비밀번호를 확인한 모델의 정보입니다.</p>
+        <div className="detail-field"><span>모델명</span><strong>{model.nickname}</strong></div>
+        <div className="detail-field"><span>Drive 폴더 ID</span><code>{model.folderId || 'URL에서 추출하지 못함'}</code></div>
+        <div className="detail-field"><span>폴더 주소</span><a href={model.driveUrl} target="_blank" rel="noreferrer">새 탭에서 열기 <ExternalLink size={13}/></a></div>
+        <div className="divider"></div>
+        <h3><MousePointer2 size={16}/> 마우스 트래킹</h3>
+        <p className="muted">Cubism SDK 연결 후 실제 모델 파라미터에 마우스 위치를 연결할 예정입니다.</p>
+      </aside>
+    </div>
+  </section>;
 }
 
 export default function App() {
@@ -219,7 +235,7 @@ export default function App() {
   return <Shell code={authorizedCode} onExit={exit}>
     <Routes>
       <Route path="/" element={<AccessPage onEnter={enter}/>}/>
-      <Route path="/models/:id" element={authorizedId ? <ViewerPage authorizedId={authorizedId} nickname={authorizedId}/> : <Navigate to="/" replace/>}/>
+      <Route path="/models/:id" element={authorizedId ? <ViewerPage authorizedId={authorizedId}/> : <Navigate to="/" replace/>}/>
       <Route path="*" element={<Navigate to="/" replace/>}/>
     </Routes>
   </Shell>;
