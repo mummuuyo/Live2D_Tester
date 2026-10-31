@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.2.2",
   "type": "module",
-  "scripts": { "dev": "vite", "build": "tsc -b && vite build", "preview": "vite preview" },
+  "scripts": { "dev": "vite", "build": "tsc -b && tsc --noEmit -p tracking-app/tsconfig.json && vite build --config vite.tracking.config.ts && vite build", "preview": "vite preview" },
   "dependencies": {
     "lucide-react": "^0.468.0",
     "react": "^19.1.0",

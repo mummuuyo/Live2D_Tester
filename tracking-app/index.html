@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#10131c" />
+    <title>Live2D Tracking Studio</title>
+    <link rel="stylesheet" href="./style.css" />
+    <script src="./Core/live2dcubismcore.js"></script>
+    <script type="module" src="./src/tracker-entry.ts"></script>
+  </head>
+  <body>
+    <main class="stage" aria-label="Live2D 트래킹 테스트 화면">
+      <header class="toolbar" id="toolbar">
+        <span class="brand">Live2D Studio</span>
+        <div class="toolbar-actions">
+          <a class="admin-link" href="../admin">관리자</a>
+          <button id="next-model" type="button" hidden>다음 모델</button>
+        </div>
+      </header>
+      <p id="status" class="status" role="status">모델 목록을 확인하고 있습니다…</p>
+    </main>
+  </body>
+</html>
